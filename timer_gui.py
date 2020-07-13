@@ -3,7 +3,7 @@ import os.path as osp
 import json
 import subprocess
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QLayout
+from PyQt5.QtWidgets import QLayout, QListWidgetItem
 from PyQt5.QtCore import QTimer
 import apps.pomodoro.designs.pomodoro as design
 import datetime
@@ -20,6 +20,8 @@ class PomodoroGUI(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.btn_add_project.clicked.connect(self.add_project)
         self.btn_add_task.clicked.connect(self.add_task)
         self.cb_project.currentTextChanged.connect(self.populate_combo_box_tasks)
+        self.btn_add.clicked.connect(self.add_pom)
+        self.sb_number_of_poms.setValue(1)
 
         self.secs_elapsed = 0
         self.pb_remaining.setValue(0)
@@ -58,7 +60,6 @@ class PomodoroGUI(QtWidgets.QMainWindow, design.Ui_MainWindow):
         for a in d:
             for b in d[a]:
                 for c in d[a][b]:
-                    print(a, b, c)
                     sd.append([a, b, c])
         sd.sort(key=lambda x: x[2], reverse=True)
 
@@ -112,71 +113,78 @@ class PomodoroGUI(QtWidgets.QMainWindow, design.Ui_MainWindow):
         except KeyError:
             pass
 
-    def pom(self):
-        self.task, self.nr_poms = self.cb_task.currentText(), self.sb_number_of_poms.value()
-        self.project = self.cb_project.currentText()
-        self.groupBox_2.setTitle(self.project + ' | ' + self.task + ' | ' + '0/{}'.format(self.nr_poms))
+    def add_pom(self):
+        new_item = '{} | {} | {}'.format(self.sb_number_of_poms.value(),
+                                         self.cb_project.currentText(),
+                                         self.cb_task.currentText())
+        QListWidgetItem(new_item, self.listWidget)
 
+    def pom(self):
         poms_before_big_pause = 4
 
         work_minutes = ['work', 24]
         pause_minutes = ['pause', 4]
         long_pause_minutes = ['long pause', 14]
 
+        # ni counts tasks excluding breaks
+        self.ni = 0
+        self.secs_elapsed = 0
+
+        nr_proj_task = []
+        for i in range(len(self.listWidget)):
+            nr_proj_task.append(self.listWidget.takeItem(0).text().split('|'))
+
+        proj_task = []
+        for i, p, t in nr_proj_task:
+            for j in range(int(i)):
+                proj_task.append([j + 1, int(i), p.strip(), t.strip()])
+
         do_this = []
-        for i in range(1, self.nr_poms + 1):
-            do_this.append(work_minutes)
+        for i in range(1, len(proj_task) + 1):
+            do_this.append(work_minutes + proj_task[i-1])
             if i % poms_before_big_pause == 0:
-                do_this.append(long_pause_minutes)
+                do_this.append(long_pause_minutes + proj_task[i-1])
             else:
-                do_this.append(pause_minutes)
+                do_this.append(pause_minutes + proj_task[i-1])
 
         # skip last break:
         do_this = do_this[:-1]
 
         self.do_this = do_this
-        self.ni = 0
 
-        self.secs_elapsed = 0
+        self.groupBox_2.setTitle(self.do_this[self.ni][-2] +
+                                 ' | ' + self.do_this[self.ni][-1] +
+                                 ' | ' + '{}/{}'.format(self.do_this[self.ni][-4],
+                                                        self.do_this[self.ni][-3]))
 
         # hide the Start and new groupBox. show the running groupbox:
         self.groupBox.hide()
         self.groupBox_3.hide()
         self.groupBox_2.show()
+        self.groupBox_6.hide()
 
         # update clock every 1 s
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.showTime)
+        self.timer.timeout.connect(self.show_time)
         self.timer.start(1000)
 
-    def showTime(self):
+    def show_time(self):
         self.lbl_status.setText(self.do_this[self.ni][0])
-        self.pb_remaining.setValue(100 * (self.secs_elapsed + 1) / ((self.do_this[self.ni][1] + 1) * 60 ))
+        self.pb_remaining.setValue(100 * (self.secs_elapsed + 1) / ((self.do_this[self.ni][1] + 1) * 60))
 
-        self.setWindowTitle('{} | {} | {}/{} | {}: {:02d}:{:02d}'.format(
-            self.project,
-            self.task,
-            int((self.ni / 2) + 1),
-            self.nr_poms,
-            self.do_this[self.ni][0],
+        self.setWindowTitle('{:02d}:{:02d}'.format(
             self.do_this[self.ni][1] - int(self.secs_elapsed / 60),
             59 - (self.secs_elapsed % 60)
         ))
 
-        if self.secs_elapsed + 1 >= (self.do_this[self.ni][1] + 1) * 60:
+        if self.secs_elapsed + 1 >= 3:#(self.do_this[self.ni][1] + 1) * 60:
             self.do_kill_timer()
         else:
             self.secs_elapsed += 1
 
     def do_kill_timer(self):
-        subprocess.call(["ffplay", "-nodisp", "-autoexit", 'whistle.mp3'])
-        text = "You finished the item {} of the task {}. ".format(self.do_this[self.ni][0], self.task)
-        self.groupBox_2.setTitle('{} | {} | {}/{}'.format(
-            self.project,
-            self.task,
-            int((self.ni / 2) + 1),
-            self.nr_poms)
-        )
+        subprocess.Popen(["ffplay", "-nodisp", "-autoexit", 'whistle.mp3'])
+        text = "You finished the item {} of the task {}. ".format(self.do_this[self.ni][0], self.do_this[self.ni][-2])
 
         if self.do_this[self.ni][0] == 'work':
             n = datetime.datetime.now()
@@ -184,22 +192,40 @@ class PomodoroGUI(QtWidgets.QMainWindow, design.Ui_MainWindow):
             interrruptions = [i.strip() for i in self.le_interruption.text().split(',')] \
                 if ',' in self.le_interruption.text() else [self.le_interruption.text()]
             self.le_interruption.setText('')
-            self.data[self.project][self.task][finish_time] = interrruptions
+            self.data[self.do_this[self.ni][-2]][self.do_this[self.ni][-1]][finish_time] = interrruptions
             self.save()
 
         ctypes.windll.user32.MessageBoxW(0, text, "Pomodoro Message", 1)
         self.timer.stop()
         self.secs_elapsed = 0
         self.ni += 1
+
+        try:
+            self.groupBox_2.setTitle('{} | {} | {}/{}'.format(
+                self.do_this[self.ni][-2],
+                self.do_this[self.ni][-1],
+                self.do_this[self.ni][-4],
+                self.do_this[self.ni][-3])
+            )
+        except IndexError:
+            self.groupBox_2.setTitle('{} | {} | {}/{}'.format(
+                self.do_this[self.ni-1][-2],
+                self.do_this[self.ni-1][-1],
+                self.do_this[self.ni-1][-4],
+                self.do_this[self.ni-1][-3])
+            )
+
         if self.ni < len(self.do_this):
             self.timer = QTimer(self)
-            self.timer.timeout.connect(self.showTime)
+            self.timer.timeout.connect(self.show_time)
             self.timer.start(1000)
         else:
             self.groupBox.show()
             self.groupBox_3.show()
             self.groupBox_2.hide()
-            text = "You finished the task {}. ".format(self.task)
+            self.listWidget.clear()
+            self.groupBox_6.show()
+            text = "You finished the task {}.".format(self.do_this[self.ni-1][-2])
             ctypes.windll.user32.MessageBoxW(0, text, "Pomodoro Message", 1)
 
 
