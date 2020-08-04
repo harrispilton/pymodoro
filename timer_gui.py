@@ -177,7 +177,7 @@ class PomodoroGUI(QtWidgets.QMainWindow, design.Ui_MainWindow):
             59 - (self.secs_elapsed % 60)
         ))
 
-        if self.secs_elapsed + 1 >= 3:#(self.do_this[self.ni][1] + 1) * 60:
+        if self.secs_elapsed + 1 >= (self.do_this[self.ni][1] + 1) * 60:
             self.do_kill_timer()
         else:
             self.secs_elapsed += 1
