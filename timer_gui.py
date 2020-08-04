@@ -5,7 +5,7 @@ import subprocess
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import QLayout, QListWidgetItem
 from PyQt5.QtCore import QTimer
-import apps.pomodoro.designs.pomodoro as design
+import designs.pomodoro as design
 import datetime
 import ctypes
 import qdarkstyle
